@@ -43,9 +43,9 @@ In a nutshell:
     ```
     curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
     # Install pip deps as your user. Do not use the system's pip.
-    python3 get-pip.py --user
-    pip3 install --upgrade pip --user
-    pip3 install --upgrade setuptools testresources --user
+    python3 get-pip.py
+    pip3 install --upgrade pip
+    pip3 install --upgrade setuptools testresources
     ```
 
 3.  This sections differs depending on the installation procedure:
@@ -89,11 +89,30 @@ Linux versions).
 
 ## Installing via Docker
 
-In the top-level directory:
+Option 1 (Basic, 3.13GB):
 
 ```bash
-docker build -t openspiel .
+docker build --target base -t openspiel . --rm
+```
+
+Option 2 (Slim, 2.26GB):
+
+```bash
+docker build --target python-slim -t openspiel . --rm
+```
+
+If you are only interested in developing in Python, use the second image. You
+can navigate through the runtime of the container (after the build step) with:
+
+```bash
+docker run -it --entrypoint /bin/bash openspiel
+```
+
+Finally you can run examples using:
+
+```bash
 docker run openspiel python3 python/examples/matrix_game_example.py
+docker run openspiel python3 python/examples/example.py
 ```
 
 ## Running the first examples
