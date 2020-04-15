@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_OPEN_SPIEL_GAMES_CURSOR_GO_H_
-#define THIRD_PARTY_OPEN_SPIEL_GAMES_CURSOR_GO_H_
+#ifndef OPEN_SPIEL_GAMES_CURSOR_GO_H_
+#define OPEN_SPIEL_GAMES_CURSOR_GO_H_
 
 #include <array>
 #include <cstring>
@@ -94,12 +94,12 @@ class CursorGoState : public State {
 
   bool IsTerminal() const override { return is_terminal_; }
 
-  std::string InformationStateString(int player) const override;
-  std::string ObservationString(int player) const override;
+  std::string InformationStateString(Player player) const override;
+  std::string ObservationString(Player player) const override;
 
   // Five planes: black, white, empty, cursor position, and a bias plane of bits
   // indicating komi (whether white is to play).
-  void ObservationTensor(int player,
+  void ObservationTensor(Player player,
                          std::vector<double>* values) const override;
 
   std::vector<double> Returns() const override;
@@ -180,4 +180,4 @@ class CursorGoGame : public Game {
 }  // namespace cursor_go
 }  // namespace open_spiel
 
-#endif  // THIRD_PARTY_OPEN_SPIEL_GAMES_GO_H_
+#endif  // OPEN_SPIEL_GAMES_GO_H_

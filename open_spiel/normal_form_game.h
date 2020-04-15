@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_OPEN_SPIEL_NORMAL_FORM_GAME_H_
-#define THIRD_PARTY_OPEN_SPIEL_NORMAL_FORM_GAME_H_
+#ifndef OPEN_SPIEL_NORMAL_FORM_GAME_H_
+#define OPEN_SPIEL_NORMAL_FORM_GAME_H_
 
 #include <memory>
 #include <string>
@@ -44,6 +44,8 @@ class NFGState : public SimMoveState {
 
   // Since there's only one state, we can implement the representations here.
   std::string InformationStateString(Player player) const override {
+    SPIEL_CHECK_GE(player, 0);
+    SPIEL_CHECK_LT(player, num_players_);
     std::string info_state = absl::StrCat("Observing player: ", player, ". ");
     if (!IsTerminal()) {
       absl::StrAppend(&info_state, "Non-terminal");
@@ -67,6 +69,8 @@ class NFGState : public SimMoveState {
 
   void InformationStateTensor(Player player,
                               std::vector<double>* values) const override {
+    SPIEL_CHECK_GE(player, 0);
+    SPIEL_CHECK_LT(player, num_players_);
     values->resize(1);
     if (IsTerminal()) {
       (*values)[0] = 1;
@@ -93,4 +97,4 @@ class NormalFormGame : public SimMoveGame {
 
 }  // namespace open_spiel
 
-#endif  // THIRD_PARTY_OPEN_SPIEL_NORMAL_FORM_GAME_H_
+#endif  // OPEN_SPIEL_NORMAL_FORM_GAME_H_
