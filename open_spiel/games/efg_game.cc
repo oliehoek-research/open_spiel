@@ -80,6 +80,11 @@ std::string NodeToString(const Node* node) {
   }
   return str;
 }
+
+std::string EFGInformationStateString(Player owner, Player observer, int number,
+                                      const std::string& name) {
+  return absl::StrCat(owner, "-", observer, "-", number, "-", name);
+}
 }  // namespace
 
 EFGState::EFGState(std::shared_ptr<const Game> game, const Node* root)
@@ -99,8 +104,10 @@ Player EFGState::CurrentPlayer() const {
 }
 
 std::string EFGState::ActionToString(Player player, Action action) const {
-  SPIEL_CHECK_LT(action, cur_node_->actions.size());
-  return cur_node_->actions[action];
+  int action_idx = ActionIdx(action);
+  SPIEL_CHECK_GE(action_idx, 0);
+  SPIEL_CHECK_LT(action_idx, cur_node_->actions.size());
+  return cur_node_->actions[action_idx];
 }
 
 std::string EFGState::ToString() const {
@@ -126,8 +133,9 @@ std::string EFGState::InformationStateString(Player player) const {
   // The information set number has to uniquely identify the infoset, whereas
   // the names are optional. But the numbers are unique per player, so must
   // add the player number.
-  return absl::StrCat(cur_node_->player_number - 1, "-", player, "-",
-                      cur_node_->infoset_number, "-", cur_node_->infoset_name);
+  return EFGInformationStateString(cur_node_->player_number - 1, player,
+                                   cur_node_->infoset_number,
+                                   cur_node_->infoset_name);
 }
 
 std::string EFGState::ObservationString(Player player) const {
@@ -146,24 +154,34 @@ void EFGState::UndoAction(Player player, Action action) {
   cur_node_ = cur_node_->parent;
 }
 
+int EFGState::ActionIdx(Action action) const {
+  int action_idx = -1;
+  for (int i = 0; i < cur_node_->action_ids.size(); ++i) {
+    if (action == cur_node_->action_ids[i]) {
+      action_idx = i;
+      break;
+    }
+  }
+  return action_idx;
+}
+
 void EFGState::DoApplyAction(Action action) {
   // Actions in these games are just indices into the legal actions.
   SPIEL_CHECK_FALSE(cur_node_->type == NodeType::kTerminal);
-  SPIEL_CHECK_LT(action, cur_node_->children.size());
-  SPIEL_CHECK_FALSE(cur_node_->children[action] == nullptr);
-  cur_node_ = cur_node_->children[action];
+  SPIEL_CHECK_GE(action, 0);
+  if (IsChanceNode()) {
+    SPIEL_CHECK_LT(action, game_->MaxChanceOutcomes());
+  } else {
+    SPIEL_CHECK_LT(action, game_->NumDistinctActions());
+  }
+  int action_idx = ActionIdx(action);
+  SPIEL_CHECK_NE(action_idx, -1);
+  SPIEL_CHECK_FALSE(cur_node_->children[action_idx] == nullptr);
+  cur_node_ = cur_node_->children[action_idx];
 }
 
 std::vector<Action> EFGState::LegalActions() const {
-  // Actions in these games are just indices into the legal actions.
-  std::vector<Action> actions(cur_node_->actions.size(), 0);
-  for (int i = 0; i < cur_node_->actions.size(); ++i) {
-    actions[i] = i;
-  }
-  if (cur_node_->type != NodeType::kTerminal) {
-    SPIEL_CHECK_GT(actions.size(), 0);
-  }
-  return actions;
+  return cur_node_->action_ids;
 }
 
 std::vector<std::pair<Action, double>> EFGState::ChanceOutcomes() const {
@@ -171,11 +189,13 @@ std::vector<std::pair<Action, double>> EFGState::ChanceOutcomes() const {
   SPIEL_CHECK_TRUE(cur_node_->type == NodeType::kChance);
   std::vector<std::pair<Action, double>> outcomes(cur_node_->children.size());
   for (int i = 0; i < cur_node_->children.size(); ++i) {
-    outcomes[i].first = i;
+    outcomes[i].first = cur_node_->action_ids[i];
     outcomes[i].second = cur_node_->probs[i];
   }
   return outcomes;
 }
+
+int EFGGame::MaxChanceOutcomes() const { return chance_action_ids_.size(); }
 
 int EFGGame::NumDistinctActions() const { return action_ids_.size(); }
 
@@ -195,7 +215,6 @@ EFGGame::EFGGame(const GameParameters& params)
       pos_(0),
       num_chance_nodes_(0),
       max_actions_(0),
-      max_chance_outcomes_(0),
       max_depth_(0),
       constant_sum_(true),
       identical_payoffs_(true),
@@ -230,7 +249,6 @@ EFGGame::EFGGame(const std::string& data)
       pos_(0),
       num_chance_nodes_(0),
       max_actions_(0),
-      max_chance_outcomes_(0),
       max_depth_(0),
       constant_sum_(true),
       identical_payoffs_(true),
@@ -401,7 +419,10 @@ void EFGGame::ParseChanceNode(Node* parent, Node* child, int depth) {
   int chance_outcomes = 0;
   double prob_sum = 0.0;
   while (string_data_.at(pos_) == '"') {
-    child->actions.push_back(NextToken());
+    std::string action_str = NextToken();
+    child->actions.push_back(action_str);
+    Action action = AddOrGetChanceOutcome(action_str);
+    child->action_ids.push_back(action);
     double prob = -1;
     SPIEL_CHECK_TRUE(ParseDoubleValue(NextToken(), &prob));
     SPIEL_CHECK_GE(prob, 0.0);
@@ -414,7 +435,6 @@ void EFGGame::ParseChanceNode(Node* parent, Node* child, int depth) {
   }
   SPIEL_CHECK_GT(child->actions.size(), 0);
   SPIEL_CHECK_TRUE(Near(prob_sum, 1.0));
-  max_chance_outcomes_ = std::max(max_chance_outcomes_, chance_outcomes);
   SPIEL_CHECK_TRUE(NextToken() == "}");
   SPIEL_CHECK_TRUE(absl::SimpleAtoi(NextToken(), &child->outcome_number));
   // Do not support optional payoffs here for now.
@@ -422,6 +442,35 @@ void EFGGame::ParseChanceNode(Node* parent, Node* child, int depth) {
   // Now, recurse:
   for (Node* grand_child : child->children) {
     RecParseSubtree(child, grand_child, depth + 1);
+  }
+}
+
+void EFGGame::UpdateAndCheckInfosetMaps(const Node* node) {
+  // If the infoset name is not empty:
+  //   1. ensure mapping from infoset (player,num) -> name is consistent, adding
+  //      it if it doesn't exist.
+  //   2. Add also name -> (player, num) to a hash map
+  Player player = node->player_number - 1;
+  if (!node->infoset_name.empty()) {
+    std::pair<Player, int> key = {player, node->infoset_number};
+    const auto& iter1 = infoset_player_num_to_name_.find(key);
+    if (iter1 != infoset_player_num_to_name_.end()) {
+      if (iter1->second != node->infoset_name) {
+        SpielFatalError(absl::StrCat(
+            "Inconsistent infoset (player, num) -> name: ",
+            static_cast<int>(player), ",", node->infoset_number, " ",
+            node->infoset_name, " ", iter1->second, "\nfilename: ", filename_,
+            "\nstring data:\n", string_data_));
+      }
+    } else {
+      std::pair<Player, int> key = {player, node->infoset_number};
+      infoset_player_num_to_name_[key] = node->infoset_name;
+    }
+
+    // Name -> infoset number is not required to be unique in .efg so we don't
+    // check it. So these may overlap unless the mapping is unique in the file.
+    infoset_name_to_player_num_[node->infoset_name] = {player,
+                                                       node->infoset_number};
   }
 }
 
@@ -446,19 +495,22 @@ void EFGGame::ParsePlayerNode(Node* parent, Node* child, int depth) {
   SPIEL_CHECK_TRUE(absl::SimpleAtoi(NextToken(), &child->player_number));
   SPIEL_CHECK_TRUE(absl::SimpleAtoi(NextToken(), &child->infoset_number));
   infoset_num_to_states_count_[child->infoset_number] += 1;
-  if (infoset_num_to_states_count_[child->infoset_number]) {
+  if (infoset_num_to_states_count_[child->infoset_number] > 1) {
     perfect_information_ = false;
   }
+  child->infoset_name = "";
   if (string_data_.at(pos_) == '"') {
     child->infoset_name = NextToken();
   }
+  UpdateAndCheckInfosetMaps(child);
   // Do not understand how the list of actions can be optional.
   SPIEL_CHECK_TRUE(NextToken() == "{");
   int actions = 0;
   while (string_data_.at(pos_) == '"') {
     std::string action_str = NextToken();
     child->actions.push_back(action_str);
-    AddActionToMap(action_str);
+    Action action = AddOrGetAction(action_str);
+    child->action_ids.push_back(action);
     nodes_.push_back(NewNode());
     child->children.push_back(nodes_.back().get());
     actions++;
@@ -565,6 +617,29 @@ std::string EFGGame::PrettyTree(const Node* node,
     str += PrettyTree(child, indent + "  ");
   }
   return str;
+}
+
+std::string EFGGame::GetInformationStateStringByName(
+    Player player, const std::string& name) const {
+  const auto& iter = infoset_name_to_player_num_.find(name);
+  if (iter == infoset_name_to_player_num_.end()) {
+    SpielFatalError(absl::StrCat("Information state not found: ", name));
+  }
+  if (iter->second.first != player) {
+    SpielFatalError(absl::StrCat("Player mismatch in lookup by name: ", name,
+                                 " ", player, " ", iter->second.first));
+  }
+  return EFGInformationStateString(player, player, iter->second.second, name);
+}
+
+std::string EFGGame::GetInformationStateStringByNumber(Player player,
+                                                       int number) const {
+  const auto& iter = infoset_player_num_to_name_.find({player, number});
+  if (iter == infoset_player_num_to_name_.end()) {
+    SpielFatalError(
+        absl::StrCat("Information state not found: ", player, ",", number));
+  }
+  return EFGInformationStateString(player, player, number, iter->second);
 }
 
 void EFGGame::ParseGame() {
