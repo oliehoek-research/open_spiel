@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_OPEN_SPIEL_GAMES_EFG_GAME_H_
-#define THIRD_PARTY_OPEN_SPIEL_GAMES_EFG_GAME_H_
+#ifndef OPEN_SPIEL_GAMES_EFG_GAME_H_
+#define OPEN_SPIEL_GAMES_EFG_GAME_H_
 
 #include <memory>
 #include <optional>
@@ -61,10 +61,6 @@ struct Node {
   std::vector<double> probs;
   std::vector<double> payoffs;
 };
-
-// A few example games used for testing.
-std::string GetSampleEFGData();
-std::string GetKuhnPokerEFGData();
 
 // A function to load an EFG directly from string data. Note: games loaded
 // using this function will not be serializable (nor will their states). Use
@@ -117,6 +113,20 @@ class EFGGame : public Game {
     }
   }
 
+  Action GetAction(const std::string& label) const {
+    auto iter = action_ids_.find(label);
+    SPIEL_CHECK_TRUE(iter != action_ids_.end());
+    return iter->second;
+  }
+
+  void AddActionToMap(const std::string& label) {
+    auto iter = action_ids_.find(label);
+    if (iter != action_ids_.end()) {
+      return;
+    }
+    action_ids_[label] = action_ids_.size();
+  }
+
  private:
   std::unique_ptr<Node> NewNode() const;
   void ParseGame();
@@ -151,9 +161,10 @@ class EFGGame : public Game {
   bool general_sum_;
   bool perfect_information_;
   std::unordered_map<int, int> infoset_num_to_states_count_;
+  std::unordered_map<std::string, Action> action_ids_;
 };
 
 }  // namespace efg_game
 }  // namespace open_spiel
 
-#endif  // THIRD_PARTY_OPEN_SPIEL_GAMES_EFG_GAME_H_
+#endif  // OPEN_SPIEL_GAMES_EFG_GAME_H_
