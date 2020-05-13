@@ -192,6 +192,7 @@ class DQN(rl_agent.AbstractAgent):
     action_indices = tf.stack(
         [tf.range(tf.shape(self._q_values)[0]), self._action_ph], axis=-1)
     predictions = tf.gather_nd(self._q_values, action_indices)
+    del action_indices
 
     if loss_str == "mse":
       loss_class = tf.losses.mean_squared_error
@@ -202,6 +203,7 @@ class DQN(rl_agent.AbstractAgent):
 
     self._loss = tf.reduce_mean(
         loss_class(labels=target, predictions=predictions))
+    del predictions
 
     if optimizer_str == "adam":
       self._optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
@@ -213,6 +215,12 @@ class DQN(rl_agent.AbstractAgent):
 
     self._learn_step = self._optimizer.minimize(self._loss)
     self._initialize()
+
+  def save_session(self, dirname):
+    inputs={"state": self._info_state_ph}
+    outputs={"qvalues": self._q_values}
+    tf.saved_model.simple_save(self._session, dirname, inputs, outputs)
+    
 
   def step(self, time_step, is_evaluation=False, add_transition_record=True):
     """Returns the action to be taken and updates the Q-network if needed.

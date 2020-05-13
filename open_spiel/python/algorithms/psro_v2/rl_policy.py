@@ -147,5 +147,5 @@ def rl_policy_factory(rl_class):
 # Generating policy classes for Policy Gradient and DQN
 # pylint: disable=invalid-name
 PGPolicy = rl_policy_factory(policy_gradient.PolicyGradient)
-DQNPolicy = rl_policy_factory(dqn.DQN)
+class DQNPolicy(rl_policy_factory(dqn.DQN)): pass
 # pylint: enable=invalid-name
